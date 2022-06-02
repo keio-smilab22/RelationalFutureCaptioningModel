@@ -1071,21 +1071,21 @@ class RecursiveTransformer(nn.Module):
             cont_loss += self.cliploss(future_rec[idx], encoded_outputs_list[idx][0][:, 5:, :])
             if gt_clip is not None:
                 fut_loss = self.future_loss(future_rec[idx].reshape(-1, 16, 16, 3), future_gt[idx] / 255.)
-                for i in range(future_rec[idx].size()[0]):
+                # for i in range(future_rec[idx].size()[0]):
 
-                    tmp_img = future_rec[idx][i].reshape(16, 16, 3)
-                    gt_img = future_gt[idx][i]
-                    tmp_img = tmp_img.to('cpu').detach().numpy().copy()
-                    tmp_img = np.clip(tmp_img * 255, a_min = 0, a_max = 255).astype(np.uint8)
-                    gt_img = gt_img.to('cpu').detach().numpy().copy().astype(np.uint8)
-                    if train:
-                        tmp_img = cv2.resize(tmp_img, dsize=(256, 256))
-                        gt_img = cv2.resize(gt_img, dsize=(256, 256))
-                        cv2.imwrite(os.path.join("./tmp_img_id58", str(self.idx) + "pred.png"), tmp_img)
-                        cv2.imwrite(os.path.join("./tmp_img_id58", str(self.idx) + "gt.png"), gt_img)
-                    self.idx += 1
-                self.idx = 0
+                #     tmp_img = future_rec[idx][i].reshape(16, 16, 3)
+                #     gt_img = future_gt[idx][i]
+                #     tmp_img = tmp_img.to('cpu').detach().numpy().copy()
+                #     tmp_img = np.clip(tmp_img * 255, a_min = 0, a_max = 255).astype(np.uint8)
+                #     gt_img = gt_img.to('cpu').detach().numpy().copy().astype(np.uint8)
+                #     if train:
+                #         tmp_img = cv2.resize(tmp_img, dsize=(256, 256))
+                #         gt_img = cv2.resize(gt_img, dsize=(256, 256))
+                #         cv2.imwrite(os.path.join("./tmp_img_id58", str(self.idx) + "pred.png"), tmp_img)
+                #         cv2.imwrite(os.path.join("./tmp_img_id58", str(self.idx) + "gt.png"), gt_img)
+                #     self.idx += 1
+                # self.idx = 0
 
-            caption_loss += 0.9 * snt_loss + 5000 * fut_loss + 5 * cont_loss + action_loss / 100
+            caption_loss += 0.9 * snt_loss + 5000 * fut_loss + 100 * cont_loss + action_loss / 100
         caption_loss /= step_size
         return caption_loss, prediction_scores_list
