@@ -232,6 +232,7 @@ class RecursiveCaptionDataset(data.Dataset):
         emb_feat = cv2.imread(file_n)
         emb_feat = torch.from_numpy(emb_feat.astype(np.float32)).clone()
         emb_feat = emb_feat.reshape(-1, 150528)
+        # print(emb_feat.shape)
         # emb_feat = emb_feat.to('cpu').detach().numpy().copy()
         all_emb_feat = cv2.imread(all_feat_n)
         fut_list = []
@@ -352,7 +353,7 @@ class RecursiveCaptionDataset(data.Dataset):
         return coll_data, meta
 
     def _get_vt_features(
-        self, video_feat_tuple, max_v_l
+        self, video_feat_tuple, max_v_l=1
     ):
         # ひとまとめにしたvideo関連の特徴量から必要なものを抽出
         clip_feat = video_feat_tuple
@@ -379,12 +380,13 @@ class RecursiveCaptionDataset(data.Dataset):
             mask: self.max_v_len
         """
         # COOT video text data as input
-        max_v_l = self.max_v_len - 6
+        max_v_l = self.max_v_len - 2
         # future
         # print("raw_feat_0", raw_feat.shape)
         raw_feat, valid_l = self._get_vt_features(
-            raw_feat, max_v_l
+            raw_feat
         )
+        valid_l = max_v_l
         video_tokens = (
             [self.CLS_TOKEN]
             + [self.VID_TOKEN] * valid_l
@@ -424,6 +426,7 @@ class RecursiveCaptionDataset(data.Dataset):
         valid_l = len(sentence_tokens)
         mask = [1] * valid_l + [0] * (max_t_len - valid_l)
         sentence_tokens += [self.PAD_TOKEN] * (max_t_len - valid_l)
+        # print('sentence', len(sentence_tokens))
         return sentence_tokens, mask
 
     def convert_ids_to_sentence(

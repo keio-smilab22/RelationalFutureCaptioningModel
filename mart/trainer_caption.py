@@ -311,16 +311,18 @@ class MartTrainer(trainer_base.BaseTrainer):
             train_loader: Training dataloader.
             val_loader: Validation dataloader.
         """
-        while(True):
-            self.wandb_flag = int(input("Use wandb\n Yes: 1, No: 0\n"))
-            if self.wandb_flag == 1:
-                wandb_name = input("please input project name : ")
-                wandb.init(name=wandb_name, project="mart")
-                break
-            elif self.wandb_flag == 0:
-                break
-            else:
-                continue
+        # while(True):
+        #     self.wandb_flag = int(input("Use wandb\n Yes: 1, No: 0\n"))
+        #     if self.wandb_flag == 1:
+        #         wandb_name = input("please input project name : ")
+        #         wandb.init(name=wandb_name, project="mart")
+        #         break
+        #     elif self.wandb_flag == 0:
+        #         break
+        #     else:
+        #         continue
+        wandb_name = "id58_fut"
+        wandb.init(name=wandb_name, project="mart")
         self.hook_pre_train()  # pre-training hook: time book-keeping etc.
         self.steps_per_epoch = len(train_loader)  # save length of epoch
 
@@ -470,8 +472,10 @@ class MartTrainer(trainer_base.BaseTrainer):
             self.metrics.update_meter(MMeters.TRAIN_ACC, accuracy)
             # return loss_per_word, accuracy
             batch_loss /= num_steps
-            if self.wandb_flag == 1:
-                wandb.log({"train_loss": batch_loss})
+            # if self.wandb_flag == 1:
+            #     wandb.log({"train_loss": batch_loss})
+
+            wandb.log({"train_loss": batch_loss})
 
             # ---------- validation ----------
             do_val = self.check_is_val_epoch()
@@ -657,9 +661,11 @@ class MartTrainer(trainer_base.BaseTrainer):
         # ---------- validation done ----------
         batch_loss /= batch_idx
         loss_delta = self.beforeloss - batch_loss
-        if self.wandb_flag == 1:
-            wandb.log({"val_loss_diff": loss_delta})
-            wandb.log({"val_loss": batch_loss})
+        # if self.wandb_flag == 1:
+        #     wandb.log({"val_loss_diff": loss_delta})
+        #     wandb.log({"val_loss": batch_loss})
+        wandb.log({"val_loss_diff": loss_delta})
+        wandb.log({"val_loss": batch_loss})
         self.beforeloss = batch_loss
 
         # sort translation
@@ -736,8 +742,9 @@ class MartTrainer(trainer_base.BaseTrainer):
         )
 
         # find field which determines whether this is a new best epoch
-        if self.wandb_flag == 1:
-            wandb.log({"val_BLEU4": flat_metrics["Bleu_4"], "val_METEOR": flat_metrics["METEOR"], "val_ROUGE_L": flat_metrics["ROUGE_L"], "val_CIDEr": flat_metrics["CIDEr"]})
+        # if self.wandb_flag == 1:
+        #     wandb.log({"val_BLEU4": flat_metrics["Bleu_4"], "val_METEOR": flat_metrics["METEOR"], "val_ROUGE_L": flat_metrics["ROUGE_L"], "val_CIDEr": flat_metrics["CIDEr"]})
+        wandb.log({"val_BLEU4": flat_metrics["Bleu_4"], "val_METEOR": flat_metrics["METEOR"], "val_ROUGE_L": flat_metrics["ROUGE_L"], "val_CIDEr": flat_metrics["CIDEr"]})
         if self.cfg.val.det_best_field == "cider":
             # val_score = flat_metrics["CIDEr"]
             val_score = -1 * batch_loss
@@ -928,8 +935,9 @@ class MartTrainer(trainer_base.BaseTrainer):
             pbar.update()
         pbar.close()
         batch_loss /= batch_idx
-        if self.wandb_flag == 1:
-            wandb.log({"test_loss": batch_loss})
+        wandb.log({"test_loss": batch_loss})
+        # if self.wandb_flag == 1:
+        #     wandb.log({"test_loss": batch_loss})
 
         # ---------- validation done ----------
 
@@ -989,8 +997,9 @@ class MartTrainer(trainer_base.BaseTrainer):
         self.logger.info(
             f"Done with translation, epoch {self.state.current_epoch} split {eval_mode}"
         )
-        if self.wandb_flag == 1:
-            wandb.log({"test_BLEU4": flat_metrics["Bleu_4"], "test_METEOR": flat_metrics["METEOR"], "test_ROUGE_L": flat_metrics["ROUGE_L"], "test_CIDEr": flat_metrics["CIDEr"]})
+        wandb.log({"test_BLEU4": flat_metrics["Bleu_4"], "test_METEOR": flat_metrics["METEOR"], "test_ROUGE_L": flat_metrics["ROUGE_L"], "test_CIDEr": flat_metrics["CIDEr"]})
+        # if self.wandb_flag == 1:
+        #     wandb.log({"test_BLEU4": flat_metrics["Bleu_4"], "test_METEOR": flat_metrics["METEOR"], "test_ROUGE_L": flat_metrics["ROUGE_L"], "test_CIDEr": flat_metrics["CIDEr"]})
         self.test_metrics = TRANSLATION_METRICS_LOG
         self.higest_test = flat_metrics
         self.logger.info(

@@ -621,7 +621,7 @@ class EmbeddingsWithVideo(nn.Module):
 
 
 class MultiHeadRSA(nn.Module):
-    def __init__(self, cfg, m=3):
+    def __init__(self, cfg, m=7):
         super().__init__()
         self.cfg = cfg
         self.m = m
@@ -647,6 +647,7 @@ class MultiHeadRSA(nn.Module):
 
             tmp_size = self.hidden_size // self.head
             query = query.reshape((-1, 1, self.head, tmp_size)).permute(0, 2, 1, 3)
+            # print('key')
             key = key.reshape((-1, self.m, self.head, tmp_size)).permute(0, 2, 1, 3)
             value = value.reshape((-1, self.m, self.head, tmp_size)).permute(0, 2, 1, 3)
 
@@ -883,7 +884,7 @@ class CLIPloss(nn.Module):
     """
     def __init__(self):
         super().__init__()
-        self.w = nn.Linear(20 * 768, 768)
+        self.w = nn.Linear(22 * 768, 768)
         self.t = torch.randn(1, requires_grad=True).cuda()
         self.i_loss = nn.CrossEntropyLoss(ignore_index=0)
         self.t_loss = nn.CrossEntropyLoss(ignore_index=1)
@@ -1003,8 +1004,8 @@ class RecursiveTransformer(nn.Module):
             # print("feat", self.mlp(fut_emb_list[:, idx, :]).shape)
             video_features[:, idx+1, :] = self.mlp(fut_emb_list[:, idx, :]).clone()
         fut_emb_list = video_features[:, 1:8, :].clone()
-        future_b = fut_emb_list[0].clone()
-        fut_emb = fut_emb_list[6].clone()
+        future_b = fut_emb_list[:, 0, :].clone()
+        # fut_emb = fut_emb_list[6].clone()
 
         # future_b = self.pred_f(future_b)
         # tmp_feat_f = clip_feats[:, 2, :].clone().cuda()
@@ -1147,14 +1148,14 @@ class RecursiveTransformer(nn.Module):
                     if train:
                         tmp_img = cv2.resize(tmp_img, dsize=(256, 256))
                         gt_img = cv2.resize(gt_img, dsize=(256, 256))
-                        cv2.imwrite(os.path.join("./tmp_img_id73", str(self.idx) + "pred.png"), tmp_img)
-                        cv2.imwrite(os.path.join("./tmp_img_id73", str(self.idx) + "gt.png"), gt_img)
+                        cv2.imwrite(os.path.join("./tmp_img_id58", str(self.idx) + "pred.png"), tmp_img)
+                        cv2.imwrite(os.path.join("./tmp_img_id58", str(self.idx) + "gt.png"), gt_img)
                     self.idx += 1
                 self.idx = 0
 
             # caption_loss += 0.9 * snt_loss
             # caption_loss += fut_loss
-            caption_loss += 0.9 * snt_loss + 1000 * fut_loss + 1 * cont_loss + action_loss / 100
+            caption_loss += 0.9 * snt_loss + 5000 * fut_loss + 5 * cont_loss + action_loss / 100
             # caption_loss += 0.9 * snt_loss + 0.1 * fut_loss + (1 / cont_loss)
         caption_loss /= step_size
         return caption_loss, prediction_scores_list

@@ -47,7 +47,7 @@ dataset_val:
 max_n_sen: 12 # 6 activitynet, 12 youcook2
 max_n_sen_add_val: 10
 max_t_len: 22
-max_v_len: 7 # 3 for mart with coot, 100 for rgb+flow video features
+max_v_len: 9 # 3 for mart with coot, 100 for rgb+flow video features
 type_vocab_size: 2
 word_vec_size: 173
 # COOT embeddings. Set coot_model_name to null to train on video features
