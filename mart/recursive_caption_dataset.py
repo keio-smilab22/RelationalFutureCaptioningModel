@@ -232,33 +232,10 @@ class RecursiveCaptionDataset(data.Dataset):
 
         emb_feat = cv2.imread(file_n)
         emb_feat = torch.from_numpy(emb_feat.astype(np.float32)).clone()
-        emb_feat = emb_feat.reshape(-1, 150528)
+        # emb_feat = emb_feat.reshape(-1, 150528)
         # emb_feat = emb_feat.to('cpu').detach().numpy().copy()
         all_emb_feat = cv2.imread(all_feat_n)
 
-        # file_n = os.path.join(".", "ponnet_data", "frames_pkl", "_"  + raw_name)
-        # future_feat_n = os.path.join(".", "ponnet_data", "future_frames_pkl")
-        # emb_feat = []
-        # ln = nn.Linear(3072, 512)
-        # for idx in range(num_images):
-        #     file_name = os.path.join(file_n, "frame_" + str(idx) + ".pkl")
-        #     with open(file_name, "rb") as f:
-        #         feat = pickle.load(f)
-        #         # print("feat", feat.shape)
-        #     emb_feat.append(feat)
-        #     # print([len(v) for v in image_feats])
-        # # print(image_feats[-1].shape)
-        # emb_feat.append(emb_feat[-1])
-        # emb_feat = np.array(emb_feat)
-        # file_name_future = os.path.join(future_feat_n, raw_name + ".pkl")
-        # with open(file_name_future, "rb") as f:
-        #     all_emb_feat = pickle.load(f)
-        # emb_feat = torch.from_numpy(emb_feat.astype(np.float32)).clone()
-        # emb_feat = emb_feat.view(1, -1)
-        # emb_feat = ln(emb_feat)
-        # emb_feat = emb_feat.to('cpu').detach().numpy().copy()
-        # # print("emb_feat", emb_feat.shape)
-        # # print("all_emb_feat", all_emb_feat.shape)
         return emb_feat, all_emb_feat
 
     def convert_example_to_features(self, example):
@@ -317,7 +294,7 @@ class RecursiveCaptionDataset(data.Dataset):
         frm2sec = None
 
         # future
-        feat, video_tokens, video_mask = self._load_indexed_video_feature(
+        feat, video_tokens, video_mask, raw_feat = self._load_indexed_video_feature(
             video_feature, frm2sec
         )
         text_tokens, text_mask = self._tokenize_pad_sentence(sentence)
@@ -348,7 +325,8 @@ class RecursiveCaptionDataset(data.Dataset):
             input_mask=np.array(input_mask).astype(np.float32),
             token_type_ids=np.array(token_type_ids).astype(np.int64),
             video_feature=feat.astype(np.float32),
-            gt_clip = gt_feat.astype(np.float32)
+            gt_clip = gt_feat.astype(np.float32),
+            img_feat = np.array(raw_feat).astype(np.float32)
         )
         meta = dict(name=name, sentence=sentence)
         return coll_data, meta
@@ -383,9 +361,10 @@ class RecursiveCaptionDataset(data.Dataset):
         # COOT video text data as input
         max_v_l = self.max_v_len - 2
         # future
-        raw_feat, valid_l = self._get_vt_features(
-            raw_feat, max_v_l
-        )
+        # raw_feat, valid_l = self._get_vt_features(
+        #     raw_feat, max_v_l
+        # )
+        valid_l = 1
         video_tokens = (
             [self.CLS_TOKEN]
             + [self.VID_TOKEN] * valid_l
@@ -396,11 +375,12 @@ class RecursiveCaptionDataset(data.Dataset):
         # 上記のように特徴量を配置
         # feat∈25×1152
         # includes [CLS], [SEP]
-        feat = np.zeros((self.max_v_len + self.max_t_len, raw_feat.shape[1]))
+        feat = np.zeros((self.max_v_len + self.max_t_len, self.coot_dim_clip))
         # feat[1:len(raw_feat) + 1] = raw_feat
-        feat[1:4] = raw_feat
+        ones_feat = torch.ones((max_v_l, self.coot_dim_clip))
+        feat[1:4] = ones_feat
         # includes [CLS], [SEP]
-        return feat, video_tokens, mask
+        return feat, video_tokens, mask, raw_feat
 
     def _tokenize_pad_sentence(self, sentence):
         """

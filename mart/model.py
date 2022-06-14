@@ -959,13 +959,13 @@ class RecursiveTransformer(nn.Module):
             module.bias.data.zero_()
 
     def forward_step(
-        self, input_ids, video_features, input_masks, token_type_ids, gt_clip=None
+        self, input_ids, video_features, input_masks, token_type_ids, img_feat, gt_clip=None
     ):
         """
         single step forward in the recursive structure
         """
-        future_b = video_features[:, 3, :].clone()
-        video_features = self.size_adjust(video_features)
+        future_b = img_feat
+        # video_features = self.size_adjust(video_features)
         self.future_rec = []
         self.future_gt = []
         if gt_clip is None:
@@ -1000,6 +1000,7 @@ class RecursiveTransformer(nn.Module):
         input_masks_list,
         token_type_ids_list,
         input_labels_list,
+        img_feat,
         gt_clip=None,
         train = False,
     ):
@@ -1029,7 +1030,8 @@ class RecursiveTransformer(nn.Module):
                     input_ids_list[idx],
                     video_features_list[idx],
                     input_masks_list[idx],
-                    token_type_ids_list[idx]
+                    token_type_ids_list[idx],
+                    img_feat[idx]
                 )
                 future_gt.append(gt_clip[idx])
                 future_rec.append(pred_future)
@@ -1042,7 +1044,8 @@ class RecursiveTransformer(nn.Module):
                     input_ids_list[idx],
                     video_features_list[idx],
                     input_masks_list[idx],
-                    token_type_ids_list[idx]
+                    token_type_ids_list[idx],
+                    img_feat[idx]
                 )
                 encoded_outputs_list.append(encoded_layer_outputs)
                 prediction_scores_list.append(prediction_scores)
@@ -1086,6 +1089,7 @@ class RecursiveTransformer(nn.Module):
                 #     self.idx += 1
                 # self.idx = 0
 
-            caption_loss += 0.9 * snt_loss + 5000 * fut_loss + 100 * cont_loss + action_loss / 100
+            caption_loss += snt_loss + 5 * cont_loss + action_loss / 100
+            # caption_loss += 0.9 * snt_loss + 5000 * fut_loss + 5 * cont_loss + action_loss / 100
         caption_loss /= step_size
         return caption_loss, prediction_scores_list

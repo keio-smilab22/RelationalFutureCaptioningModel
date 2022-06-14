@@ -52,7 +52,7 @@ type_vocab_size: 2
 word_vec_size: 173
 # COOT embeddings. Set coot_model_name to null to train on video features
 coot_model_name: "yc2_100m_coot"
-coot_dim_clip: 150528
+coot_dim_clip: 768
 coot_dim_vid: 768
 coot_mode: "clip"
 # Video feature size: 3072 for rgb+flow features, 1152 for COOT vidclip, 384 for COOT clip

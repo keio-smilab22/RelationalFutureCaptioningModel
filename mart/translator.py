@@ -93,6 +93,7 @@ class Translator(object):
         video_features_list,
         input_masks_list,
         token_type_ids_list,
+        img_feat,
         rt_model,
     ):
         def greedy_decoding_step(
@@ -101,6 +102,7 @@ class Translator(object):
             video_features,
             input_masks,
             token_type_ids,
+            img_feat,
             model,
             max_v_len,
             max_t_len,
@@ -129,7 +131,8 @@ class Translator(object):
                     input_ids,
                     video_features,
                     input_masks,
-                    token_type_ids
+                    token_type_ids,
+                    img_feat
                 )
                 # suppress unk token; (N, L, vocab_size)
                 pred_scores[:, :, unk_idx] = -1e10
@@ -164,6 +167,7 @@ class Translator(object):
                     video_features_list[idx],
                     input_masks_list[idx],
                     token_type_ids_list[idx],
+                    img_feat[idx],
                     rt_model,
                     config.max_v_len,
                     config.max_t_len,
@@ -191,12 +195,14 @@ class Translator(object):
                 video_features_list,
                 input_masks_list,
                 token_type_ids_list,
+                img_feat,
             ) = model_inputs
             return self.translate_batch_greedy(
                 input_ids_list,
                 video_features_list,
                 input_masks_list,
                 token_type_ids_list,
+                img_feat,
                 self.model,
             )
 
