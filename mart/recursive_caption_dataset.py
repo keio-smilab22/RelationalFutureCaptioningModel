@@ -44,12 +44,12 @@ def make_dict(train_caption_file, word2idx_filepath):
         word_list = nltk.tokenize.word_tokenize(sent)
         max_words = max(max_words, len(word_list))
         words.extend(word_list)
-    
+
     # default dict
     word2idx_dict =\
         {"[PAD]": 0, "[CLS]": 1, "[SEP]": 2, "[VID]": 3, "[BOS]": 4, "[EOS]": 5, "[UNK]": 6}
     word_idx = 7
-    
+
     # 辞書の作成
     for word in words:
         if word not in word2idx_dict:
@@ -59,7 +59,7 @@ def make_dict(train_caption_file, word2idx_filepath):
     # 辞書ファイルの作成
     with open(word2idx_filepath, "w") as f:
         json.dump(word2idx_dict, f, indent=0)
-    
+
     return max_words
 
 
@@ -139,7 +139,7 @@ class RecursiveCaptionDataset(data.Dataset):
         # ---------- Load metadata ----------
 
         # determine metadata file
-        tmp_path = "ponnet"
+        tmp_path = "BILA"
         if mode == "train":  # 1333 videos
             data_path = self.annotations_dir / tmp_path / "captioning_train.json"
         elif mode == "val":  # 457 videos

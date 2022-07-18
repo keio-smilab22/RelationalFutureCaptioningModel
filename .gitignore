@@ -15,6 +15,7 @@
 /wandb/
 /BDD-X-Dataset/
 /out/
+/tmp_img*/
 
 
 # ---------- general
@@ -26,6 +27,8 @@
 *.gz
 *.pkl
 *.pt
+*.png
+*.txt
 *-ubyte
 
 # pycharm
@@ -62,3 +65,5 @@ nosetests.xml
 coverage.xml
 *.cover
 .hypothesis/
+
+fiveTime.sh

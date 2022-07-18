@@ -3,7 +3,7 @@ config_type: "mart"
 # ---------- Training ----------
 train:
     batch_size: 16
-    num_epochs: 25
+    num_epochs: 30
     loss_func: "crossentropy"
     clip_gradient: 1
 label_smoothing: 0.1
