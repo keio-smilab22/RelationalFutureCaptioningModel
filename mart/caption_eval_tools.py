@@ -40,4 +40,9 @@ def get_reference_files(
             return {"test": [annotations_dir / "captioning_test_para.json"]}
         else:
             return {"val": [annotations_dir / "captioning_val_para.json"]}
+    if dset_name == "BILA":
+        if test:
+            return {"test": [annotations_dir / "captioning_test_para.json"]}
+        else:
+            return {"val": [annotations_dir / "captioning_val_para.json"]}
     raise ValueError(f"Dataset unknown {dset_name}")
