@@ -30,7 +30,7 @@ length_penalty_name: "none"
 length_penalty_alpha: 0.
 # ---------- Dataset / Dataloader ----------
 dataset_train:
-    name: "ponnet"
+    name: "BILA"
     data_type: "auto"
     subset: "default"
     split: "train"

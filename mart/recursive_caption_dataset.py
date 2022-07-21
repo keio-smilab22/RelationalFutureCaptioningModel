@@ -141,7 +141,7 @@ class RecursiveCaptionDataset(data.Dataset):
         # ---------- Load metadata ----------
 
         # determine metadata file
-        tmp_path = "ponnet"
+        tmp_path = "BILA"
         if mode == "train":  # 1333 videos
             data_path = self.annotations_dir / tmp_path / "captioning_train.json"
         elif mode == "val":  # 457 videos
@@ -221,15 +221,15 @@ class RecursiveCaptionDataset(data.Dataset):
         # 動画に関する特徴量を取得
         feat_file = raw_name + ".png"
         all_feat_file = raw_name + ".png"
-        file_n = os.path.join(".", "ponnet_data", "center_future_frames", feat_file)
-        all_feat_n = os.path.join(".", "ponnet_data", "16_center_future_frames", all_feat_file)
-        fut_img = os.path.join(".", "ponnet_data", "4s_16_center_future_frames", feat_file)
-        fut_img_2 = os.path.join(".", "ponnet_data", "3.2s_16_center_future_frames", feat_file)
-        fut_img_4 = os.path.join(".", "ponnet_data", "3.4s_16_center_future_frames", feat_file)
-        fut_img_6 = os.path.join(".", "ponnet_data", "3.6s_16_center_future_frames", feat_file)
-        fut_img_8 = os.path.join(".", "ponnet_data", "3.8s_16_center_future_frames", feat_file)
+        # file_n = os.path.join(".", "ponnet_data", "center_future_frames", feat_file)
+        all_feat_n = os.path.join(".", "ponnet_data", "3.0s_center_frames", all_feat_file)
+        fut_img = os.path.join(".", "ponnet_data", "4.0s_center_frames", feat_file)
+        fut_img_2 = os.path.join(".", "ponnet_data", "3.2s_center_frames", feat_file)
+        fut_img_4 = os.path.join(".", "ponnet_data", "3.4s_center_frames", feat_file)
+        fut_img_6 = os.path.join(".", "ponnet_data", "3.6s_center_frames", feat_file)
+        fut_img_8 = os.path.join(".", "ponnet_data", "3.8s_center_frames", feat_file)
 
-        emb_feat = cv2.imread(file_n)
+        emb_feat = cv2.imread(all_feat_n)
         emb_feat = torch.from_numpy(emb_feat.astype(np.float32)).clone()
         emb_feat = emb_feat.reshape(-1, 150528)
         # emb_feat = emb_feat.to('cpu').detach().numpy().copy()
