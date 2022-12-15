@@ -107,6 +107,7 @@ class RecursiveTransformer(nn.Module):
         txt_feats = self.txt_embedder(txt_feats)
         # cross Attention
         img_feats = self.CrossAttention(img_feats, detection_feats) # (B, Lv, D)
+        
         # CLS and BOS token
         B,_,D = img_feats.shape
         cls_token = torch.zeros((B,1,D), requires_grad=True).cuda()
@@ -115,7 +116,7 @@ class RecursiveTransformer(nn.Module):
         img_feats = torch.cat((cls_token, img_feats, bos_token), dim=1)
 
         # cat: (B,Lv,D) + (B,Lt,D) -> (B,Lv+Lt,D)
-        features = torch.cat((img_feats, txt_feats), dim=1)
+        features = torch.cat((img_feats[:,:self.cfg.max_v_len, :], txt_feats), dim=1)
         
         # 再構成用
         rec_feat = features[:,1,:].clone()
@@ -229,45 +230,30 @@ class CrossAttention(nn.Module):
         self.cfg = cfg
 
         if cfg.ca_embedder == "Base":
-            self.camera_embedder = BaseEmbedder(cfg)
-            self.target_embedder = BaseEmbedder(cfg)
+            self.img_embedder = BaseEmbedder(cfg)
         elif cfg.ca_embedder == "CLIP":
-            self.camera_embedder = CLIPEmbedder(cfg)
-            self.target_embedder = CLIPEmbedder(cfg)
+            self.img_embedder = CLIPEmbedder(cfg)
         elif cfg.ca_embedder == "Res":
-            self.camera_embedder = ResEmbedder(cfg)
-            self.target_embedder = ResEmbedder(cfg)
+            self.img_embedder = ResEmbedder(cfg)
         elif cfg.ca_embedder == "ConvNeXt":
-            self.camera_embedder = ConvNeXtEmbedder()
-            self.target_embedder = ConvNeXtEmbedder()
+            self.img_embedder = ConvNeXtEmbedder()
 
-        self.camera_encoder = CrossAttentionEncoder(cfg)
-        self.target_encoder = CrossAttentionEncoder(cfg)
+        self.img_encoder = CrossAttentionEncoder(cfg)
+        self.detect_encoder = CrossAttentionEncoder(cfg)
 
-    def forward(self, img_feats: torch.Tensor, detection_feats: torch.Tensor):
+    def forward(self, img_feats: torch.Tensor, detect_feats: torch.Tensor):
         """
         Args:
             img_feats(torch.Tensor): (B, 6(4), H, W, C)
             if max_v_len==8 4 else 2
         """
-        if self.cfg.max_v_len == 6:
-            camera_feats = img_feats[:,0:2,:].contiguous() # (B, 2, H, W, C)
-            target_feats = img_feats[:,2:4,:].contiguous() # (B, 2, H, W, C)
-        else:
-            camera_feats = torch.cat((img_feats[:,0:2,:], img_feats[:,4:6,:]), dim=1).contiguous() #(B,4,H,W,C)
-            target_feats = img_feats[:,2:4,:].contiguous() #(B,4,H,W,C)
+        img_feats = self.img_embedder(img_feats)
         
-        camera_feats = self.camera_embedder(camera_feats) # (B, 2or4, D)
-        target_feats = self.target_embedder(target_feats) # (B, 2or4, D)
-
-        # cat target and objcet(of detection)
-        target_feats = torch.cat((target_feats, detection_feats), dim=1)
-
-        camera_feats = self.camera_encoder(hidden_states=camera_feats, source_kv=target_feats) #(B,4(2),D)
-        target_feats = self.target_encoder(hidden_states=target_feats, source_kv=camera_feats) #(B,4(2),D)
+        img_feats = self.img_encoder(hidden_states=img_feats, source_kv=detect_feats) #(B,4(2),D)
+        detect_feats = self.detect_encoder(hidden_states=detect_feats, source_kv=img_feats) #(B,4(2),D)
 
         # concat
-        img_feats = torch.cat((camera_feats, target_feats[:,:2,:]), dim=1) #(B, 6(4), D)
+        img_feats = torch.cat((img_feats, detect_feats), dim=1) #(B, 6(4), D)
 
         return img_feats
 
