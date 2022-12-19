@@ -66,13 +66,18 @@ def main():
             trainer.train_model(
                     train_loader, val_loader, 
                     test_loader, datatype=args.datatype,
-                    use_wandb=args.wandb, show_log=args.show_log,)
+                    use_wandb=args.wandb, show_log=args.show_log,
+                    make_knn_dstore=args.make_knn_dstore,
+                    do_knn=args.do_knn)
         
         if args.del_weights:
             print('Pay Attention : Delete All Model weights ... ', end='')
             weights_dir = os.path.join(trainer.exp.path_base, "models")
             shutil.rmtree(weights_dir)
             print('ok')
+
+        if args.make_knn_dstore:
+            print(f'Save dstore Num >>>> {trainer.translator.dstore_idx}')
 
         trainer.close()
         del model

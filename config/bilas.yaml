@@ -91,3 +91,7 @@ saving:
     save_last: true
     save_best: true
     save_opt_state: true
+# ------- knn --------
+dstore_keys_path: "checkpoints/dstore_keys.npy"
+dstore_vals_path: "checkpoints/dstore_vals.npy"
+dstore_size: 100000

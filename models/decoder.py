@@ -17,7 +17,7 @@ class DecoderLayer(nn.Module):
         self.rand_z = torch.randn(1, requires_grad=True).cuda()
         self.LayerNorm = nn.LayerNorm(cfg.hidden_size, eps=cfg.layer_norm_eps)
 
-    def forward(self, x, attention_mask, clip_his):
+    def forward(self, x, attention_mask, clip_his, make_knn_dstore: bool=False):
         """
         Args:
             prev_m: (N, M, D)
@@ -25,24 +25,25 @@ class DecoderLayer(nn.Module):
             attention_mask: (N, L)
         Returns:
         """
-        max_v_len, max_t_len = self.cfg.max_v_len, self.cfg.max_t_len
-        # self-attention, need to shift right
-        shifted_self_mask = make_pad_shifted_mask(
-            attention_mask, max_v_len, max_t_len, decoder=True
-        )  # (N, L, L)
+        # attention layer
+        identity_x = x.clone().cuda()
+        x = self.attention(x=x, source_kv=clip_his)
+        x = self.rand * identity_x + (1 - self.rand) * x
+        x = self.LayerNorm(x)
+
+        if make_knn_dstore:
+            knn_feat = x.clone().cpu()
         
-        tmp_x = x.clone().cuda()
-        # att = self.attention(x, shifted_self_mask, clip_his)
-        att = self.attention(x=x, source_kv=clip_his)
-        hidden_states = self.rand * tmp_x + (1 - self.rand) * att
-        hidden_states = self.LayerNorm(hidden_states)
+        # ffn layer
+        identity_x = x.clone().cuda()
+        x = self.ffn(x)
+        x = self.rand_z * identity_x + (1 - self.rand_z) * x
+        x = self.LayerNorm(x)
+
+        if make_knn_dstore:
+            return x, knn_feat
         
-        tmp_x = hidden_states.clone().cuda()
-        hidden_states = self.ffn(hidden_states)
-        layer_output = self.rand_z * tmp_x + (1 - self.rand_z) * hidden_states
-        # layer_output = self.output(att, att)  # (N, L, D)
-        layer_output = self.LayerNorm(layer_output)
-        return layer_output
+        return x
 
 
 class TransformerDecoder(nn.Module):
@@ -52,7 +53,7 @@ class TransformerDecoder(nn.Module):
             [DecoderLayer(cfg) for _ in range(num_hidden_layers)]
         )
 
-    def forward(self, hidden_states, attention_mask, clip_his):
+    def forward(self, hidden_states, attention_mask, clip_his, make_knn_dstore: bool=False):
         """
         Args:
             hidden_states: (N, L, D)
@@ -60,18 +61,24 @@ class TransformerDecoder(nn.Module):
             output_all_encoded_layers:
         Returns:
         """
-        # TODO :
-        # こいつら使ってない
-        # query_clip = torch.zeros(hidden_states.shape).cuda()
-        # query_clip = query_clip + clip_his
         all_decoder_layers = []
+        knn_feats = []
         for layer_idx, layer_module in enumerate(self.layer):
-            hidden_states =\
-                layer_module(hidden_states, attention_mask, clip_his)
-            # hidden_states =\
-            #     layer_module(hidden_states, query_clip)
+            if make_knn_dstore:
+                hidden_states, knn_feat =\
+                    layer_module(hidden_states, attention_mask, clip_his, make_knn_dstore=make_knn_dstore)
+                knn_feats.append(knn_feat)
+            
+            else:
+                hidden_states =\
+                    layer_module(hidden_states, attention_mask, clip_his)
+            
             all_decoder_layers.append(hidden_states)
-        return all_decoder_layers
+        
+        if make_knn_dstore:
+            return all_decoder_layers, knn_feats
+        else:
+            return all_decoder_layers
 
 
 class TrmFeedForward(nn.Module):

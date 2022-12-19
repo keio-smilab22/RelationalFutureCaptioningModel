@@ -20,6 +20,7 @@ import copy
 import logging
 from typing import Optional
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -88,6 +89,9 @@ class Translator(object):
             self.logger = utils.create_logger_without_file(
                 "translator", log_level=INFO
             )
+
+        # knn
+        self.dstore_idx: int = 0
     
     def translate_batch_greedy(
         self,
@@ -99,7 +103,14 @@ class Translator(object):
         bboxes_list,
         bbox_feats_list,
         rt_model,
+        make_knn_dstore: bool=False,
     ):
+        # ------ knn ------
+        if make_knn_dstore:
+            d_size = self.cfg.dstore_size
+            dstore_keys = np.memmap(self.cfg.dstore_keys_path, dtype=np.float32, mode="w+", shape=(d_size, self.cfg.clip_dim))
+            dstore_vals = np.memmap(self.cfg.dstore_vals_path, dtype=np.float32, mode="w+", shape=(d_size, self.cfg.vocab_size))
+
         def greedy_decoding_step(
             prev_ms_,
             input_ids,
@@ -114,6 +125,7 @@ class Translator(object):
             max_t_len,
             start_idx=BilaDataset.BOS,
             unk_idx=BilaDataset.UNK,
+            make_knn_dstore: bool=False,
         ):
             """
             RTransformer The first few args are the same to the input to the forward_step func
@@ -131,11 +143,22 @@ class Translator(object):
             for dec_idx in range(max_v_len, max_v_len + max_t_len):
                 input_ids[:, dec_idx] = next_symbols
                 input_masks[:, dec_idx] = 1
-                copied_prev_ms = copy.deepcopy(
-                    prev_ms_
-                )  # since the func is changing data inside
+                # since the func is changing data inside
+                copied_prev_ms = copy.deepcopy(prev_ms_)
                 
-                _, pred_scores, _ = model.forward_step(
+                if make_knn_dstore:
+                    _, pred_scores, _, knn_feats = model.forward_step(
+                        input_ids,
+                        img_feats,
+                        txt_feats,
+                        input_masks,
+                        token_type_ids,
+                        bboxes,
+                        bbox_feats,
+                        make_knn_dstore=make_knn_dstore
+                    )
+                else:
+                    _, pred_scores, _ = model.forward_step(
                     input_ids,
                     img_feats,
                     txt_feats,
@@ -143,10 +166,21 @@ class Translator(object):
                     token_type_ids,
                     bboxes,
                     bbox_feats,
+                    make_knn_dstore=make_knn_dstore
                 )
                 
                 # suppress unk token; (N, L, vocab_size)
                 pred_scores[:, :, unk_idx] = -1e10
+
+                if make_knn_dstore:
+                    knn_keys = knn_feats[:, dec_idx, :] # (16, 768) <- (16, 63, 768)
+                    knn_vals = pred_scores[:, dec_idx, :].cpu().detach().numpy().copy() # (16, 291)
+
+                    shape = knn_keys.shape
+                    dstore_keys[self.dstore_idx:self.dstore_idx+shape[0]] = knn_keys
+                    dstore_vals[self.dstore_idx:self.dstore_idx+shape[0]] = knn_vals
+
+                    self.dstore_idx += shape[0]
                 
                 next_words = pred_scores[:, dec_idx].max(1)[1]
                 next_symbols = next_words
@@ -181,6 +215,7 @@ class Translator(object):
                     rt_model,
                     config.max_v_len,
                     config.max_t_len,
+                    make_knn_dstore=make_knn_dstore,
                 )
                 dec_seq_list.append(dec_seq)
             return dec_seq_list
@@ -188,7 +223,8 @@ class Translator(object):
     def translate_batch(
         self,
         model_inputs,
-        use_beam=False,
+        use_beam: bool=False,
+        make_knn_dstore: bool=False,
     ):
         """
         while we used *_list as the input names, they could be non-list for single sentence decoding case
@@ -212,6 +248,7 @@ class Translator(object):
             bboxes_list,
             bbox_feats_list,
             self.model,
+            make_knn_dstore=make_knn_dstore
         )
 
     @classmethod

@@ -174,7 +174,7 @@ class FilesHandler:
         self.path_embeddings = self.path_base / TrainerPathConst.DIR_EMBEDDINGS
 
 
-    def get_translation_files(self, epoch: Union[int, str], split: str) -> Path:
+    def get_translation_files(self, epoch: Union[int, str], split: str, make_knn_dstore: bool=False) -> Path:
         """
         Summary:
             生成文・gt文の保存先のpathを返す
@@ -182,10 +182,16 @@ class FilesHandler:
             epoch: Epoch.
             split: dataset split (val, test)
         """
-        return (
-            self.path_caption
-            / f"{TrainerPathConst.FILE_PREFIX_TRANSL_RAW}_{epoch}_{split}.json"
-        )
+        if make_knn_dstore:
+            return (
+                self.path_caption
+                / f"{TrainerPathConst.FILE_PREFIX_TRANSL_RAW}_{split}.json"
+            )
+        else:
+            return (
+                self.path_caption
+                / f"{TrainerPathConst.FILE_PREFIX_TRANSL_RAW}_{epoch}_{split}.json"
+            )
 
     def setup_dirs(self, reset: bool = False) -> None:
         """

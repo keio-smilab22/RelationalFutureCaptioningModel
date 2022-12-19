@@ -97,6 +97,9 @@ class Trainer:
         
         self.model = model
 
+        # knn
+        self.dstore_idx = 0
+
         # ファイル関連の設定
         exp = FilesHandler(
             run_name=run_name,
@@ -337,11 +340,13 @@ class Trainer:
         datatype: str = "bila",
         use_wandb: bool = False,
         show_log: bool = False,
+        make_knn_dstore: bool = False,
+        do_knn: bool = False,
     ) -> None:
         
         self.use_wandb = use_wandb
         if use_wandb:
-            wandb_name = f"{datatype}_{self.cfg.max_t_len}_{self.cfg.max_v_len}_del_rsa_and_add_selfatt_crossatt"
+            wandb_name = f"{datatype}_{self.cfg.max_t_len}_{self.cfg.max_v_len}_make_knn"
             wandb.init(name=wandb_name, project="BilaS")
         
         # set start epoch and time & show log
@@ -360,7 +365,6 @@ class Trainer:
                 # use normal parameters for training, not EMA model
                 self.ema.resume(self.model)
             
-
             torch.autograd.set_detect_anomaly(True)
 
             total_loss = 0
@@ -541,11 +545,21 @@ class Trainer:
             )
         )
 
+        # make knn dstore only last epoch
+        if make_knn_dstore:
+            print("--------------------------")
+            print(f'Make Dstore | epoch : {_epoch}')
+            print("--------------------------")
+            print("---------- Start ----------")
+            self.validate_epoch(train_loader, datatype=datatype, make_knn_dstore=make_knn_dstore)
+            print('---------- Done -----------')
+
 
     @torch.no_grad()
     def validate_epoch(
         self, data_loader: data.DataLoader, 
-        datatype: str="bila"
+        datatype: str="bila",
+        make_knn_dstore: bool = False,
     ) -> (Tuple[float, float, bool, Dict[str, float]]):
         """
         Run both validation and translation.
@@ -651,6 +665,7 @@ class Trainer:
                 dec_seq_list = self.translator.translate_batch(
                     model_inputs,
                     use_beam=self.cfg.use_beam,
+                    make_knn_dstore=make_knn_dstore,
                 )
 
                 for example_idx, (step_size, cur_meta) in enumerate(
@@ -700,7 +715,7 @@ class Trainer:
         batch_rec_loss /= batch_idx
         batch_clip_loss /= batch_idx
         loss_delta = self.beforeloss - batch_loss
-        if self.use_wandb:
+        if self.use_wandb and not make_knn_dstore:
             wandb.log({"val_loss_diff": loss_delta})
             wandb.log({"val_loss": batch_loss})
             wandb.log({"val_snt_loss": batch_snt_loss})
@@ -712,21 +727,32 @@ class Trainer:
         batch_res["results"] = self.translator.sort_res(batch_res["results"])
 
         # write translation results of this epoch to file
-        eval_mode = self.cfg.dataset_val.split  # which dataset split
+        if make_knn_dstore:
+            eval_mode = "train"  # which dataset split
+        else:
+            eval_mode = self.cfg.dataset_val.split  # which dataset split
+
         file_translation_raw = self.exp.get_translation_files(
-            self.state.current_epoch, eval_mode
+            self.state.current_epoch, eval_mode, make_knn_dstore=make_knn_dstore
         )
         if datatype == 'bila':
             json.dump(batch_res, file_translation_raw.open("wt", encoding="utf8"))
         elif datatype == 'bilas':
             json.dump(batch_res, file_translation_raw.open("wt", encoding="utf8"), ensure_ascii=False)
+        
 
         # get reference files (ground truth captions)
         reference_files_map = get_reference_files(
-            self.cfg.dataset_val.name, self.exp.data_dir, datatype=datatype,
+            self.cfg.dataset_val.name, self.exp.data_dir, datatype=datatype, make_knn_dstore=make_knn_dstore,
         )
         reference_files = reference_files_map[eval_mode]
         reference_file_single = reference_files[0]
+        
+        if make_knn_dstore:
+            print('----------------------------')
+            print(file_translation_raw)
+            print(reference_files)
+            print('----------------------------')
 
         # language evaluation
         res_lang = evaluate_language_files(

@@ -399,7 +399,7 @@ def make_caption(args: Args):
     Ouput:
         data/BilaS/caption_{valid, test}.json
     """
-    modes = ["valid", "test"]
+    modes = ["train", "valid", "test"]
     for mode in modes:
         input_path = Path(args.data_dir, f"bilas_{mode}_mecab.jsonl")
         output_path = Path(args.data_dir, f"caption_{mode}.json")

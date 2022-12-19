@@ -22,7 +22,9 @@ data/
 NotUse/
 *_old/
 results/
-
+checkpoints/
+cmake-3.25.0/
+faiss/
 
 # ---------- general
 

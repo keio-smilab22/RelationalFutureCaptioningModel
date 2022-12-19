@@ -278,6 +278,7 @@ def get_reference_files(
     annotations_dir: Union[str, Path],
     test: bool = False,
     datatype: str = 'bila',
+    make_knn_dstore: bool=False,
 ) -> Dict[str, List[Path]]:
     """
     Given dataset name, load the ground truth annotations for captioning.
@@ -315,7 +316,9 @@ def get_reference_files(
             else:
                 return {"val": [annotations_dir / "captioning_val_para.json"]}
         if datatype == 'bilas':
-            if test:
+            if make_knn_dstore:
+                return {"train": ["data/BilaS/caption_train.json"]}
+            elif test:
                 return {"test": ["data/BilaS/caption_test.json"]}
             else:
                 return {"val": ["data/BilaS/caption_valid.json"]}

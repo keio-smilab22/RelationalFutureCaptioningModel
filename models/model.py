@@ -1,5 +1,6 @@
 import logging
 
+import numpy as np
 import torch
 from torch import nn
 
@@ -90,6 +91,7 @@ class RecursiveTransformer(nn.Module):
         token_type_ids: torch.Tensor,
         bboxes: torch.Tensor,
         bbox_feats: torch.Tensor,
+        make_knn_dstore: bool=False,
     ):
         """
             singleure step forward in the recursive struct
@@ -121,27 +123,30 @@ class RecursiveTransformer(nn.Module):
         
         # 再構成用
         rec_feat = features[:,1,:].clone()
-        # 画像only (B, Lv-2, D)
-        # TODO : ここ意味わからん
-        # img_feats = features[:,1:self.cfg.max_v_len-1,:].clone()
-
-        # Time Series Module
-        # img_feats, _  = self.RSAEncoder(img_feats)
 
         embeddings = self.embeddings(input_ids, features, token_type_ids)
         
         encoded_layer_outputs = self.TextEncoder(
             embeddings, input_masks, output_all_encoded_layers=False
         )
-        # encoded_layer_ouputs[-1]: (16,63,768)
-        # img_feats: (16,1,768)
-        decoded_layer_outputs = self.transformerdecoder(
-            encoded_layer_outputs[-1], input_masks, img_feats
-        )
-        prediction_scores = self.decoder(
-            decoded_layer_outputs[-1]
-        )  # (N, L, vocab_size)
-        return encoded_layer_outputs, prediction_scores, rec_feat
+        # decoder 
+        if make_knn_dstore:
+            decoded_layer_outputs, knn_feats = self.transformerdecoder(
+                encoded_layer_outputs[-1], input_masks, img_feats, make_knn_dstore=make_knn_dstore
+            )
+        else:
+            decoded_layer_outputs = self.transformerdecoder(
+                encoded_layer_outputs[-1], input_masks, img_feats, make_knn_dstore=make_knn_dstore
+            )
+        
+        # prediction head
+        prediction_scores = self.decoder(decoded_layer_outputs[-1])  # (N, L, vocab_size)
+        
+        if make_knn_dstore:
+            knn_feats = np.asarray(knn_feats[-1].cpu().detach().numpy().copy(), dtype=np.float32)
+            return encoded_layer_outputs, prediction_scores, rec_feat, knn_feats
+        else:
+            return encoded_layer_outputs, prediction_scores, rec_feat
 
     def forward(
         self,

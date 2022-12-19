@@ -171,6 +171,11 @@ class Config(ConfigClass):
         # must be set manually as it depends on the dataset
         self.vocab_size: Optional[int] = None
 
+        # knn
+        self.dstore_size: int = config.pop("dstore_size")
+        self.dstore_keys_path: str = config.pop('dstore_keys_path')
+        self.dstore_vals_path: str = config.pop('dstore_vals_path')
+
         # assert the config is valid
         if self.share_wd_cls_weight:
             assert self.word_vec_size == self.hidden_size, (
