@@ -26,6 +26,9 @@ checkpoints/
 cmake-3.25.0/
 faiss/
 
+# jaSPICE
+wnjpn.db
+
 # ---------- general
 
 # big files

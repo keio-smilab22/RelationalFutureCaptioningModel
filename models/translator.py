@@ -30,6 +30,7 @@ from utils.configs import Config
 from models.beam_search import BeamSearch
 from utils import utils
 from utils.utils import INFO
+import faiss
 
 
 def tile(x, count, dim=0):
@@ -104,12 +105,13 @@ class Translator(object):
         bbox_feats_list,
         rt_model,
         make_knn_dstore: bool=False,
+        do_knn: bool=False,
     ):
         # ------ knn ------
         if make_knn_dstore:
             d_size = self.cfg.dstore_size
-            dstore_keys = np.memmap(self.cfg.dstore_keys_path, dtype=np.float32, mode="w+", shape=(d_size, self.cfg.clip_dim))
-            dstore_vals = np.memmap(self.cfg.dstore_vals_path, dtype=np.float32, mode="w+", shape=(d_size, self.cfg.vocab_size))
+            dstore_keys = np.memmap(self.cfg.dstore_keys_path, dtype=np.float32, mode="r+", shape=(d_size, self.cfg.clip_dim))
+            dstore_vals = np.memmap(self.cfg.dstore_vals_path, dtype=np.float32, mode="r+", shape=(d_size, self.cfg.vocab_size))
 
         def greedy_decoding_step(
             prev_ms_,
@@ -126,6 +128,7 @@ class Translator(object):
             start_idx=BilaDataset.BOS,
             unk_idx=BilaDataset.UNK,
             make_knn_dstore: bool=False,
+            do_knn: bool=False,
         ):
             """
             RTransformer The first few args are the same to the input to the forward_step func
@@ -146,7 +149,7 @@ class Translator(object):
                 # since the func is changing data inside
                 copied_prev_ms = copy.deepcopy(prev_ms_)
                 
-                if make_knn_dstore:
+                if make_knn_dstore or do_knn:
                     _, pred_scores, _, knn_feats = model.forward_step(
                         input_ids,
                         img_feats,
@@ -155,7 +158,7 @@ class Translator(object):
                         token_type_ids,
                         bboxes,
                         bbox_feats,
-                        make_knn_dstore=make_knn_dstore
+                        make_knn_dstore=(make_knn_dstore or do_knn),
                     )
                 else:
                     _, pred_scores, _ = model.forward_step(
@@ -181,8 +184,36 @@ class Translator(object):
                     dstore_vals[self.dstore_idx:self.dstore_idx+shape[0]] = knn_vals
 
                     self.dstore_idx += shape[0]
+
+                if do_knn:
+                    d_size = self.cfg.dstore_size
+                    keys, vals = self.get_knn_feats(self.cfg.dstore_keys_path, self.cfg.dstore_vals_path, d_size, self.cfg.dstore_id_num)
+
+                    DataBase = faiss.IndexFlatL2(self.cfg.clip_dim)
+                    DataBase.add(keys)
+
+                    hidden_feats = knn_feats[:, dec_idx, :]
+
+                    D, I = DataBase.search(hidden_feats, self.cfg.k_num) # (16, num_k)
+                    batch_size = knn_feats.shape[0]
+                    
+                    knn_preds = np.stack([vals[I[i]] for i in range(batch_size)]) # (B,num_k,291)
+                    
+                    knn_origin = False
+                    alpha = self.cfg.alpha
+                    if knn_origin:
+                        knn_preds_agg = np.sum(knn_preds, axis=1)/knn_preds.shape[0]
+                        knn_preds_agg = torch.from_numpy(knn_preds_agg).to("cuda")
+                        pred_scores = (1-alpha)*pred_scores[:, dec_idx] + alpha*knn_preds_agg
+                    else:
+                        knn_preds = torch.from_numpy(knn_preds)
+                        knn_preds = self.make_knn_preds(knn_preds, torch.from_numpy(D))
+                        pred_scores = (1-alpha)*pred_scores[:,dec_idx] + alpha*knn_preds.to('cuda')
                 
-                next_words = pred_scores[:, dec_idx].max(1)[1]
+                if do_knn:
+                    next_words = pred_scores.max(1)[1]
+                else:
+                    next_words = pred_scores[:, dec_idx].max(1)[1] # (B,)
                 next_symbols = next_words
 
             # compute memory, mimic the way memory is generated at training time
@@ -216,15 +247,62 @@ class Translator(object):
                     config.max_v_len,
                     config.max_t_len,
                     make_knn_dstore=make_knn_dstore,
+                    do_knn=do_knn,
                 )
                 dec_seq_list.append(dec_seq)
             return dec_seq_list
+    
+    def make_knn_preds(
+        self,
+        knn_preds: torch.Tensor,
+        distance: np.ndarray, # (6, 10)
+    ):
+        B, K, vocab_size = knn_preds.shape
+
+        # (1) knnでとってきた確率に対してargmaxをとる
+        pred_idx = torch.argmax(knn_preds, dim=2) # (B,k,291) -> (B,k)
+
+        # (2) 距離を温度Tで割る
+        distance = torch.exp(-(distance / self.cfg.knn_temperature))
+
+        # (3) knnの予測値を計算する 
+        preds = torch.zeros((B, vocab_size))
+        for b in range(B):
+            for k in range(K):
+                preds[b][pred_idx[b][k]] = distance[b][k]
+        
+        return preds
+    
+    def get_knn_feats(
+        self,
+        kpath: str,
+        vpath: str,
+        dsize: int,
+        Numid: int,
+    ):
+        keys_memmap = np.memmap(kpath, dtype=np.float32, mode="r+", shape=(dsize, self.cfg.clip_dim))
+        key_numpy = np.zeros((self.cfg.dstore_size, self.cfg.clip_dim), dtype=np.float32)
+        key_numpy = keys_memmap[:]
+        keys = np.zeros((Numid, self.cfg.clip_dim), dtype=np.float32)
+        keys[:] = key_numpy[:Numid]
+        keys = keys.astype(np.float32)
+
+        vals_memmap = np.memmap(vpath, dtype=np.float32, mode="r+", shape=(dsize, self.cfg.vocab_size))
+        vals_numpy = np.zeros((self.cfg.dstore_size, self.cfg.vocab_size), dtype=np.float32)
+        vals_numpy = vals_memmap[:]
+        vals = np.zeros((Numid, self.cfg.vocab_size), dtype=np.float32)
+        vals[:] = vals_numpy[:Numid]
+        vals = vals.astype(np.float32)
+
+        return torch.from_numpy(keys), torch.from_numpy(vals)
+
 
     def translate_batch(
         self,
         model_inputs,
         use_beam: bool=False,
         make_knn_dstore: bool=False,
+        do_knn: bool=False,
     ):
         """
         while we used *_list as the input names, they could be non-list for single sentence decoding case
@@ -248,7 +326,8 @@ class Translator(object):
             bboxes_list,
             bbox_feats_list,
             self.model,
-            make_knn_dstore=make_knn_dstore
+            make_knn_dstore=make_knn_dstore,
+            do_knn=do_knn,
         )
 
     @classmethod

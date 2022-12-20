@@ -1,14 +1,15 @@
+import datetime
 import os
 import shutil
-import datetime
+
 import numpy as np
 
-from trainer import Trainer
-from models.model import create_model
 from datasets.bila import create_datasets_and_loaders
-from utils.utils import fix_seed, load_yaml_to_config
+from models.model import create_model
+from trainer import Trainer
 from utils.arguments import set_parser
 from utils.configs import Config, get_config_file, update_config_from_args
+from utils.utils import fix_seed, load_yaml_to_config
 
 
 def main():

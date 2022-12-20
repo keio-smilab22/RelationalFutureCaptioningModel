@@ -175,6 +175,10 @@ class Config(ConfigClass):
         self.dstore_size: int = config.pop("dstore_size")
         self.dstore_keys_path: str = config.pop('dstore_keys_path')
         self.dstore_vals_path: str = config.pop('dstore_vals_path')
+        self.k_num: int = config.pop('k_num')
+        self.alpha: int = config.pop('alpha')
+        self.dstore_id_num: int = config.pop("dstore_id_num")
+        self.knn_temperature: int = config.pop('knn_temperature')
 
         # assert the config is valid
         if self.share_wd_cls_weight:

@@ -346,7 +346,7 @@ class Trainer:
         
         self.use_wandb = use_wandb
         if use_wandb:
-            wandb_name = f"{datatype}_{self.cfg.max_t_len}_{self.cfg.max_v_len}_make_knn"
+            wandb_name = f"{datatype}_{self.cfg.max_t_len}_{self.cfg.max_v_len}_make_knn_and_do_knn_v2"
             wandb.init(name=wandb_name, project="BilaS")
         
         # set start epoch and time & show log
@@ -548,11 +548,19 @@ class Trainer:
         # make knn dstore only last epoch
         if make_knn_dstore:
             print("--------------------------")
-            print(f'Make Dstore | epoch : {_epoch}')
-            print("--------------------------")
+            print(f'epoch : {_epoch} | Make Dstore >>> ', end="")
+            d_size = self.cfg.dstore_size
+            dstore_keys = np.memmap(self.cfg.dstore_keys_path, dtype=np.float32, mode="w+", shape=(d_size, self.cfg.clip_dim))
+            dstore_vals = np.memmap(self.cfg.dstore_vals_path, dtype=np.float32, mode="w+", shape=(d_size, self.cfg.vocab_size))
+            del dstore_keys, dstore_vals
+            print("Done")
             print("---------- Start ----------")
             self.validate_epoch(train_loader, datatype=datatype, make_knn_dstore=make_knn_dstore)
             print('---------- Done -----------')
+
+        if do_knn:
+            print('---------- Do KNN ----------')
+            self.test_epoch(test_loader, datatype=datatype, do_knn=do_knn)
 
 
     @torch.no_grad()
@@ -866,6 +874,7 @@ class Trainer:
         self,
         data_loader: data.DataLoader,
         datatype: str = 'bila',
+        do_knn: bool = False,
     ) -> (Tuple[float, float, bool, Dict[str, float]]):
         """
         Run both validation and translation.
@@ -971,6 +980,7 @@ class Trainer:
                 dec_seq_list = self.translator.translate_batch(
                     model_inputs,
                     use_beam=self.cfg.use_beam,
+                    do_knn=do_knn
                 )
 
                 for example_idx, (step_size, cur_meta) in enumerate(
