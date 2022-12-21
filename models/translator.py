@@ -103,7 +103,6 @@ class Translator(object):
         token_type_ids_list,
         bboxes_list,
         bbox_feats_list,
-        rt_model,
         make_knn_dstore: bool=False,
         do_knn: bool=False,
     ):
@@ -122,7 +121,6 @@ class Translator(object):
             token_type_ids,
             bboxes,
             bbox_feats,
-            model,
             max_v_len,
             max_t_len,
             start_idx=BilaDataset.BOS,
@@ -150,7 +148,7 @@ class Translator(object):
                 copied_prev_ms = copy.deepcopy(prev_ms_)
                 
                 if make_knn_dstore or do_knn:
-                    _, pred_scores, _, knn_feats = model.forward_step(
+                    _, pred_scores, _, knn_feats = self.model.forward_step(
                         input_ids,
                         img_feats,
                         txt_feats,
@@ -161,7 +159,7 @@ class Translator(object):
                         make_knn_dstore=(make_knn_dstore or do_knn),
                     )
                 else:
-                    _, pred_scores, _ = model.forward_step(
+                    _, pred_scores, _ = self.model.forward_step(
                     input_ids,
                     img_feats,
                     txt_feats,
@@ -228,9 +226,8 @@ class Translator(object):
                 torch.sum(cur_input_masks[:, self.cfg.max_v_len + 1 :]) == 0
             ), "Initially, all text tokens should be masked"
 
-        config = rt_model.cfg
         with torch.no_grad():
-            prev_ms = [None] * config.num_hidden_layers
+            prev_ms = [None] * self.cfg.num_hidden_layers
             step_size = len(input_ids_list)
             dec_seq_list = []
             for idx in range(step_size):
@@ -243,9 +240,8 @@ class Translator(object):
                     token_type_ids_list[idx],
                     bboxes_list[idx],
                     bbox_feats_list[idx],
-                    rt_model,
-                    config.max_v_len,
-                    config.max_t_len,
+                    self.cfg.max_v_len,
+                    self.cfg.max_t_len,
                     make_knn_dstore=make_knn_dstore,
                     do_knn=do_knn,
                 )
@@ -325,7 +321,6 @@ class Translator(object):
             token_type_ids_list,
             bboxes_list,
             bbox_feats_list,
-            self.model,
             make_knn_dstore=make_knn_dstore,
             do_knn=do_knn,
         )

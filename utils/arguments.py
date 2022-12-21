@@ -22,7 +22,8 @@ def set_parser():
     parser.add_argument('--show_log', '-l', action="store_true")
     parser.add_argument('--del_weights', '-dw', action="store_true")
 
-    # knn
+    # knn & test
+    parser.add_argument('--test', action="store_true")
     parser.add_argument('--make_knn_dstore', action="store_true")
     parser.add_argument('--do_knn', action="store_true")
 

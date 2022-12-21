@@ -17,7 +17,6 @@ from torch import nn
 from torch.backends import cudnn
 from torch.cuda.amp import GradScaler
 from torch.cuda.amp import autocast
-from torch.nn.utils import clip_grad_norm_
 from torch.optim import Optimizer
 from torch.utils import data
 from tqdm import tqdm
@@ -26,7 +25,7 @@ import wandb
 from datasets.bila import BilaDataset, prepare_batch_inputs
 from utils.utils import get_reference_files
 from utils.configs import Config, MetersConst as MMeters
-from utils.manager import FilesHandler, ModelManager
+from utils.manager import FilesHandler
 from metrics.evaluate_language import evaluate_language_files
 from metrics.evaluate_repetition import evaluate_repetition_files
 from metrics.evaluate_stats import evaluate_stats_files
@@ -111,8 +110,6 @@ class Trainer:
 
         # settings
         self.is_test: bool = is_test
-        # save model manager
-        self.model_mgr: ModelManager = ModelManager(cfg, model)
         # create empty trainer state
         self.state = TrainerState()
         # save config
@@ -149,16 +146,11 @@ class Trainer:
                                 f"gpus found: {torch.cuda.device_count()}, fp16 amp: {self.cfg.fp16_train}.")
         
         # move models to cuda
-        for model in self.model_mgr.model_dict.values():
-            try:
-                if self.cfg.use_cuda:
-                    if not torch.cuda.is_available():
-                        raise RuntimeError(
-                            "CUDA requested but not available! Use --no_cuda to run on CPU.")
-                    model = model.cuda()
-            except RuntimeError as e:
-                raise RuntimeError(f"RuntimeError when putting model {type(model)} to cuda with DataParallel "
-                                    f"{model.__class__.__name__}") from e
+        if self.cfg.use_cuda:
+            if not torch.cuda.is_available():
+                raise RuntimeError(
+                    "CUDA requested but not available! Use --no_cuda to run on CPU.")
+            model = model.cuda()
         
         # create metrics writer
         self.metrics = metric.MetricsWriter(self.exp)
@@ -176,8 +168,7 @@ class Trainer:
         self.load_model = load_model
         
         if self.load_model:
-            assert not load_epoch, (
-                "When given filepath with load_model, --load_epoch must not be set.")
+            assert not load_epoch, ("When given filepath with load_model, --load_epoch must not be set.")
             self.load = True
         
         # automatically find best epoch otherwise
@@ -266,8 +257,10 @@ class Trainer:
 
         self.optimizer = None
         self.lr_scheduler = None
-        self.ema = EMA(cfg.ema_decay)
+        self.ema = EMA(cfg.ema_decay) # TODO:
+        
         self.best_epoch = 0
+        
         # skip optimizer if not training
         if not self.is_test:
             # Prepare optimizer
@@ -289,11 +282,12 @@ class Trainer:
                     "weight_decay": 0.0,
                 },
             ]
+            
+            # emaに初期のパラメータを登録する
+            # cfg.ema_decay: default=0.999
             if cfg.ema_decay > 0:
-                # register EMA params
                 self.logger.info(
-                    f"Registering {sum(p.numel() for p in model.parameters())} params for EMA"
-                )
+                    f"Registering {sum(p.numel() for p in model.parameters())} params for EMA")
                 all_names = []
                 for name, p in model.named_parameters():
                     if p.requires_grad:
@@ -313,9 +307,22 @@ class Trainer:
 
         self.translator = Translator(self.model, self.cfg, logger=self.logger)
 
-        # post init hook for checkpoint loading
-        self.hook_post_init()
+        # checkpoint loading
+        if self.load:
+            if self.load_model:
+                # load model from file. this would start training from epoch 0, but is usually only used for validation.
+                self.logger.info(f"Loading model from checkpoint file {self.load_model}")
+                self.model.load_state_dict(torch.load(str(self.load_model)))
+            else:
+                # load model given an epoch. also reload metrics and optimization to correctly continue training.
+                self.logger.info(f"Loading Ep {self.load_ep}.")
+                self._load_checkpoint(self.load_ep)
+                if not self.is_test:
+                    # In training, add 1 to current epoch after loading since if we loaded epoch N, we are training
+                    # epoch N+1 now. In validation, we are validating on epoch N.
+                    self.state.current_epoch += 1
 
+        # default self.load=False, self.load_model=None
         if self.load and not self.load_model:
             # reload EMA weights from checkpoint (the shadow) and save the model parameters (the original)
             ema_file = self.exp.get_models_file_ema(self.load_ep)
@@ -324,6 +331,8 @@ class Trainer:
             self.ema.assign(self.model, update_model=False)
 
         # disable ema when loading model directly or when decay is 0 / -1
+        if is_test:
+            self.ema = None
         if self.load_model or cfg.ema_decay <= 0:
             self.ema = None
 
@@ -356,13 +365,14 @@ class Trainer:
             # set models to train, time book-keeping
             self.hook_pre_train_epoch(show_log)
 
+            # TODO:
             # check exponential moving average
             if (
                 self.ema is not None
                 and self.state.current_epoch != 0
                 and self.cfg.ema_decay != -1
             ):
-                # use normal parameters for training, not EMA model
+                # originalのモデルにvalid(test)時に登録されるパラメータに更新
                 self.ema.resume(self.model)
             
             torch.autograd.set_detect_anomaly(True)
@@ -462,7 +472,8 @@ class Trainer:
                         )
                     self.optimizer.step()
                 
-                # update model parameters with ema
+                # TODO:
+                # 指数移動平均を計算し、emaに登録
                 if self.ema is not None:
                     self.ema(self.model, self.state.total_step)
 
@@ -484,7 +495,9 @@ class Trainer:
                     break
 
                 additional_log = f" Grad {self.metrics.meters[MMeters.GRAD].avg:.2f}"
-                self.hook_post_backward_step_timer()  # hook for step timing
+                
+                # calc time
+                self.timedelta_step_backward = timer() - self.timer_step_backward
 
                 # post-step hook: gradient clipping, profile gpu, update metrics, count step, step LR scheduler, log
                 current_lr = self.optimizer.get_lr()[0]
@@ -496,6 +509,10 @@ class Trainer:
                     disable_grad_clip=True,
                     show_log=show_log
                 )
+            
+            # save model
+            models_file = self.exp.get_models_file(self.state.current_epoch)
+            torch.save(self.model.state_dict(), str(models_file))
 
             # log train statistics
             loss_per_word = 1.0 * total_loss / n_word_total
@@ -529,9 +546,11 @@ class Trainer:
                 self.test_epoch(test_loader, datatype=datatype)
                 print("###################################################")
 
+            # TODO:
             # save the EMA weights
-            ema_file = self.exp.get_models_file_ema(self.state.current_epoch)
-            torch.save(self.ema.state_dict(), str(ema_file))
+            if self.ema is not None:
+                ema_file = self.exp.get_models_file_ema(self.state.current_epoch)
+                torch.save(self.ema.state_dict(), str(ema_file))
 
             # post-epoch hook: scheduler, save checkpoint, time bookkeeping, feed tensorboard
             self.hook_post_train_and_val_epoch(do_val, is_best)
@@ -568,6 +587,7 @@ class Trainer:
         self, data_loader: data.DataLoader, 
         datatype: str="bila",
         make_knn_dstore: bool = False,
+        validate: bool = False,
     ) -> (Tuple[float, float, bool, Dict[str, float]]):
         """
         Run both validation and translation.
@@ -578,18 +598,15 @@ class Trainer:
         Translation: Use greedy generated words to predicted next words, the true inference situation.
         eval_mode can only be set to `val` here, as setting to `test` is cheating
         0. run inference, 1. Get METEOR, BLEU1-4, CIDEr scores, 2. Get vocab size, sentence length
-
-        Args:
-            data_loader: Dataloader for validation
-
-        Returns:
-            Tuple of:
-                validation loss
-                validation score
-                epoch is best
-                custom metrics with translation results dictionary
         """
-        self.hook_pre_val_epoch()  # pre val epoch hook: set models to val and start timers
+
+        if validate:
+            self.use_wandb = False
+        
+        # pre val epoch hook: set models to val and start timers
+        self.timer_val_epoch = timer()
+        self.timer_step = timer()
+        
         forward_time_total = 0
         total_loss = 0
         n_word_total = 0
@@ -600,7 +617,7 @@ class Trainer:
         batch_clip_loss = 0.0
         batch_idx = 0
 
-        # setup ema
+        # originalのモデルの値を保存 + 値を更新
         if self.ema is not None:
             self.ema.assign(self.model)
 
@@ -612,14 +629,15 @@ class Trainer:
         }
         dataset: BilaDataset = data_loader.dataset
 
-        # ---------- Dataloader Iteration ----------
         num_steps = 0
         pbar = tqdm(
             total=len(data_loader), desc=f"Validate epoch {self.state.current_epoch}"
         )
+        # set model eval
+        self.model.eval()
         for _step, batch in enumerate(data_loader):
-            # ---------- forward pass ----------
-            self.hook_pre_step_timer()  # hook for step timing
+            # set time
+            self.timer_step_forward = timer()
 
             with autocast(enabled=self.cfg.fp16_val):
                 batched_data = [
@@ -657,6 +675,7 @@ class Trainer:
                 batch_rec_loss += rec_loss
                 batch_clip_loss += clip_loss
                 batch_idx += 1
+                
                 # translate (no ground truth text)
                 step_sizes = batch[1]  # list(int), len == bsz
                 meta = batch[2]  # list(dict), len == bsz
@@ -687,8 +706,6 @@ class Trainer:
                                 "sentence": dataset.convert_ids_to_sentence(
                                     step_batch[example_idx].cpu().tolist()
                                 ),
-                                # remove encoding
-                                # .encode("ascii", "ignore"),
                                 "gt_sentence": cur_meta["gt_sentence"],
                                 "clip_id": cur_meta["clip_id"]
                             }
@@ -708,8 +725,10 @@ class Trainer:
                 total_loss += loss.item()
 
             # end of step
-            self.hook_post_forward_step_timer()
+            self.timer_step_backward = timer()
+            self.timedelta_step_forward = self.timer_step_backward - self.timer_step_forward
             forward_time_total += self.timedelta_step_forward
+            
             num_steps += 1
 
             if self.cfg.debug:
@@ -757,7 +776,7 @@ class Trainer:
         reference_file_single = reference_files[0]
         
         if make_knn_dstore:
-            print('----------------------------')
+            print('---------- File Check ----------')
             print(file_translation_raw)
             print(reference_files)
             print('----------------------------')
@@ -875,6 +894,7 @@ class Trainer:
         data_loader: data.DataLoader,
         datatype: str = 'bila',
         do_knn: bool = False,
+        test: bool = False,
     ) -> (Tuple[float, float, bool, Dict[str, float]]):
         """
         Run both validation and translation.
@@ -896,12 +916,19 @@ class Trainer:
                 epoch is best
                 custom metrics with translation results dictionary
         """
-        self.hook_pre_val_epoch()  # pre val epoch hook: set models to val and start timers
+        if test:
+            self.use_wandb = False
+        
+        # set start timers
+        self.timer_val_epoch = timer()
+        self.timer_step = timer()
+        
         forward_time_total = 0
         total_loss = 0
         n_word_total = 0
         n_word_correct = 0
 
+        # TODO:
         # setup ema
         if self.ema is not None:
             self.ema.assign(self.model)
@@ -912,21 +939,24 @@ class Trainer:
             "results": defaultdict(list),
             "external_data": {"used": "true", "details": "ay"},
         }
+        # dataset
         dataset: BilaDataset = data_loader.dataset
 
-        # ---------- Dataloader Iteration ----------
-        num_steps = 0
         pbar = tqdm(
             total=len(data_loader), desc=f"Validate epoch {self.state.current_epoch}"
         )
+        num_steps = 0
         batch_loss = 0.0
         batch_snt_loss = 0.0
         batch_rec_loss = 0.0
         batch_clip_loss = 0.0
         batch_idx = 0
+
+        # model to eval
+        self.model.eval()
         for _step, batch in enumerate(data_loader):
-            # ---------- forward pass ----------
-            self.hook_pre_step_timer()  # hook for step timing
+            # set timer
+            self.timer_step_forward = timer()
 
             with autocast(enabled=self.cfg.fp16_val):
                 batched_data = [
@@ -964,6 +994,7 @@ class Trainer:
                 batch_rec_loss += rec_loss
                 batch_clip_loss += clip_loss
                 batch_idx += 1
+                
                 # translate (no ground truth text)
                 step_sizes = batch[1]  # list(int), len == bsz
                 meta = batch[2]  # list(dict), len == bsz
@@ -1013,8 +1044,10 @@ class Trainer:
                 total_loss += loss.item()
 
             # end of step
-            self.hook_post_forward_step_timer()
+            self.timer_step_backward = timer()
+            self.timedelta_step_forward = self.timer_step_backward - self.timer_step_forward
             forward_time_total += self.timedelta_step_forward
+
             num_steps += 1
 
             if self.cfg.debug:
@@ -1031,8 +1064,6 @@ class Trainer:
             wandb.log({"test_snt_loss": batch_snt_loss})
             wandb.log({"test_rec_loss": batch_rec_loss})
             wandb.log({"test_clip_loss": batch_clip_loss})
-
-        # ---------- validation done ----------
 
         # sort translation
         batch_res["results"] = self.translator.sort_res(batch_res["results"])
@@ -1197,15 +1228,10 @@ class Trainer:
         Hook called after trainer init is done. Loads the correct epoch.
         """
         if self.load:
-            assert not self.model_mgr.was_loaded, (
-                f"Error: Loading epoch {self.load_ep} but already weights have been loaded. If you load weights for "
-                f"warmstarting, you cannot run if the experiments has already saved checkpoints. Change the run name "
-                f"or use --reset to delete the experiment run.")
             if self.load_model:
                 # load model from file. this would start training from epoch 0, but is usually only used for validation.
                 self.logger.info(f"Loading model from checkpoint file {self.load_model}")
-                model_state = torch.load(str(self.load_model))
-                self.model_mgr.set_model_state(model_state)
+                self.model.load_state_dict(torch.load(str(self.load_model)))
             else:
                 # load model given an epoch. also reload metrics and optimization to correctly continue training.
                 self.logger.info(f"Loading Ep {self.load_ep}.")
@@ -1223,8 +1249,8 @@ class Trainer:
         self.timer_train_start = timer()
         if show_log:
             self.logger.info(f"Training from {self.state.current_epoch} to {self.cfg.train.num_epochs}")
-            self.logger.info("Training Models on devices " + ", ".join([
-                f"{key}: {next(val.parameters()).device}" for key, val in self.model_mgr.model_dict.items()]))
+            # self.logger.info("Training Models on devices " + ", ".join([
+            #     f"{key}: {next(val.parameters()).device}" for key, val in self.model_mgr.model_dict.items()]))
 
     def hook_post_train(self, show_log:bool=False) -> None:
         """
@@ -1241,7 +1267,10 @@ class Trainer:
         """
         Hook called before training an epoch. Set models to train, times start, reset meters, log info.
         """
-        self.model_mgr.set_all_models_train()
+        # model to train
+        self.model.train()
+        
+        # set timer
         self.timer_train_epoch = timer()
         self.timer_step = timer()
         # clear metrics
@@ -1252,13 +1281,10 @@ class Trainer:
 
     def hook_pre_val_epoch(self) -> None:
         """
-        Hook called before validating an epoch. Set models to val, times start.
+        Hook called before validating an epoch. times start.
         """
-        # set models to validation mode
-        self.model_mgr.set_all_models_eval()
         # start validation epoch timer
         self.timer_val_epoch = timer()
-        #
         self.timer_step = timer()
 
     def hook_post_val_epoch(self, val_loss: float, is_best: bool) -> None:
@@ -1338,11 +1364,11 @@ class Trainer:
         self.timer_step_backward = timer()
         self.timedelta_step_forward = self.timer_step_backward - self.timer_step_forward
 
-    def hook_post_backward_step_timer(self) -> None:
-        """
-        Hook called after backward pass. Compute time delta.
-        """
-        self.timedelta_step_backward = timer() - self.timer_step_backward
+    # def hook_post_backward_step_timer(self) -> None:
+    #     """
+    #     Hook called after backward pass. Compute time delta.
+    #     """
+    #     self.timedelta_step_backward = timer() - self.timer_step_backward
 
     def hook_post_step(
             self, epoch_step: int, loss: torch.Tensor, lr: float, additional_log: Optional[str] = None,
@@ -1369,16 +1395,6 @@ class Trainer:
 
         # clip gradients
         total_norm = 0
-        if self.cfg.train.clip_gradient > -1 and not disable_grad_clip:
-            # get all parameters to clip
-            _params, _param_names, params_flat = self.model_mgr.get_all_params()
-            # clip using pytorch
-            total_norm = clip_grad_norm_(params_flat, self.cfg.train.clip_gradient)
-            if total_norm > self.cfg.train.clip_gradient:
-                # print log message if gradients where clipped
-                grad_clip_coef = self.cfg.train.clip_gradient / (total_norm + 1e-6)
-                self.logger.info(f"Clipping gradient: {total_norm} with coef {grad_clip_coef}")
-            total_norm = total_norm.item()
         self.state.last_grad_norm = total_norm
 
         # print infos
@@ -1504,10 +1520,9 @@ class Trainer:
         self.metrics.save_epoch(self.state.current_epoch)
 
         # models
-        models_file = self.exp.get_models_file(self.state.current_epoch)
-        state = self.model_mgr.get_model_state()
-        torch.save(state, str(models_file))
-
+        # models_file = self.exp.get_models_file(self.state.current_epoch)
+        # torch.save(self.model.state_dict(), str(models_file))
+        
         # optimizer and scheduler
         opt_file = self.exp.get_optimizer_file(self.state.current_epoch)
         opt_state = self.get_opt_state()
@@ -1526,8 +1541,7 @@ class Trainer:
 
         # models
         models_file = self.exp.get_models_file(epoch)
-        model_state = torch.load(str(models_file))
-        self.model_mgr.set_model_state(model_state)
+        self.model.load_state_dict(torch.load(str(models_file)))
 
         # optimizer and scheduler
         if not self.is_test:

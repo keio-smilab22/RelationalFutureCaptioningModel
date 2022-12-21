@@ -3,6 +3,7 @@ import os
 import shutil
 
 import numpy as np
+import torch
 
 from datasets.bila import create_datasets_and_loaders
 from models.model import create_model
@@ -55,14 +56,17 @@ def main():
         trainer = Trainer(
             cfg, model, run_name, len(train_loader), log_dir=args.log_dir,
             log_level=args.log_level, logger=None, reset=args.reset, load_best=load_best,
-            load_epoch=args.load_epoch, load_model=args.load_model, is_test=args.validate,
+            load_epoch=args.load_epoch, load_model=args.load_model, is_test=(args.validate or args.test),
             data_dir=args.data_dir, show_log=args.show_log,)
 
-        if args.validate:
+        if args.test:
+            assert args.load_model is not None
+            trainer.test_epoch(test_loader, datatype=args.datatype, do_knn=args.do_knn, test=args.test)
+        elif args.validate:
             if not trainer.load and not args.ignore_untrained:
                 raise ValueError("Validating an untrained model! No checkpoints were loaded. Add --ignore_untrained "
                                     "to ignore this error.")
-            trainer.validate_epoch(val_loader, datatype=args.datatype)
+            trainer.validate_epoch(val_loader, datatype=args.datatype, validate=args.validate)
         else:
             trainer.train_model(
                     train_loader, val_loader, 
@@ -75,7 +79,7 @@ def main():
             print('Pay Attention : Delete All Model weights ... ', end='')
             weights_dir = os.path.join(trainer.exp.path_base, "models")
             shutil.rmtree(weights_dir)
-            print('ok')
+            print('fin')
 
         if args.make_knn_dstore:
             print(f'Save dstore Num >>>> {trainer.translator.dstore_idx}')
