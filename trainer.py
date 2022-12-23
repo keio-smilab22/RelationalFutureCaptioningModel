@@ -305,14 +305,15 @@ class Trainer:
                 schedule="warmup_linear",
             )
 
-        self.translator = Translator(self.model, self.cfg, logger=self.logger)
+        self.translator = Translator(self.cfg, logger=self.logger)
 
         # checkpoint loading
         if self.load:
             if self.load_model:
                 # load model from file. this would start training from epoch 0, but is usually only used for validation.
                 self.logger.info(f"Loading model from checkpoint file {self.load_model}")
-                self.model.load_state_dict(torch.load(str(self.load_model)))
+                # self.model.load_state_dict(torch.load(str(self.load_model)))
+                self.model = torch.load(self.load_model)
             else:
                 # load model given an epoch. also reload metrics and optimization to correctly continue training.
                 self.logger.info(f"Loading Ep {self.load_ep}.")
@@ -355,7 +356,7 @@ class Trainer:
         
         self.use_wandb = use_wandb
         if use_wandb:
-            wandb_name = f"{datatype}_{self.cfg.max_t_len}_{self.cfg.max_v_len}_make_knn_and_do_knn_v2"
+            wandb_name = f"{datatype}_{self.cfg.max_t_len}_{self.cfg.max_v_len}_del_grad_clip"
             wandb.init(name=wandb_name, project="BilaS")
         
         # set start epoch and time & show log
@@ -512,7 +513,7 @@ class Trainer:
             
             # save model
             models_file = self.exp.get_models_file(self.state.current_epoch)
-            torch.save(self.model.state_dict(), str(models_file))
+            torch.save(self.model, str(models_file))
 
             # log train statistics
             loss_per_word = 1.0 * total_loss / n_word_total
@@ -602,6 +603,7 @@ class Trainer:
 
         if validate:
             self.use_wandb = False
+            self.ema = None
         
         # pre val epoch hook: set models to val and start timers
         self.timer_val_epoch = timer()
@@ -690,6 +692,7 @@ class Trainer:
                     [e["bbox_feats"] for e in batched_data],
                 ]
                 dec_seq_list = self.translator.translate_batch(
+                    self.model,
                     model_inputs,
                     use_beam=self.cfg.use_beam,
                     make_knn_dstore=make_knn_dstore,
@@ -918,6 +921,7 @@ class Trainer:
         """
         if test:
             self.use_wandb = False
+            self.ema = None
         
         # set start timers
         self.timer_val_epoch = timer()
@@ -1009,6 +1013,7 @@ class Trainer:
                     [e["bbox_feats"] for e in batched_data],
                 ]
                 dec_seq_list = self.translator.translate_batch(
+                    self.model,
                     model_inputs,
                     use_beam=self.cfg.use_beam,
                     do_knn=do_knn

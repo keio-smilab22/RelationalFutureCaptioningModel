@@ -81,9 +81,8 @@ class Translator(object):
     """
 
     def __init__(
-        self, model: nn.Module, cfg: Config, logger: Optional[logging.Logger] = None
+        self, cfg: Config, logger: Optional[logging.Logger] = None
     ):
-        self.model = model
         self.cfg = cfg
         self.logger = logger
         if self.logger is None:
@@ -96,6 +95,7 @@ class Translator(object):
     
     def translate_batch_greedy(
         self,
+        model: nn.Module,
         input_ids_list,
         img_feats_list,
         txt_feats_list,
@@ -113,6 +113,7 @@ class Translator(object):
             dstore_vals = np.memmap(self.cfg.dstore_vals_path, dtype=np.float32, mode="r+", shape=(d_size, self.cfg.vocab_size))
 
         def greedy_decoding_step(
+            model: nn.Module,
             prev_ms_,
             input_ids,
             img_feats,
@@ -148,7 +149,7 @@ class Translator(object):
                 copied_prev_ms = copy.deepcopy(prev_ms_)
                 
                 if make_knn_dstore or do_knn:
-                    _, pred_scores, _, knn_feats = self.model.forward_step(
+                    _, pred_scores, _, knn_feats = model.forward_step(
                         input_ids,
                         img_feats,
                         txt_feats,
@@ -159,7 +160,7 @@ class Translator(object):
                         make_knn_dstore=(make_knn_dstore or do_knn),
                     )
                 else:
-                    _, pred_scores, _ = self.model.forward_step(
+                    _, pred_scores, _ = model.forward_step(
                     input_ids,
                     img_feats,
                     txt_feats,
@@ -232,6 +233,7 @@ class Translator(object):
             dec_seq_list = []
             for idx in range(step_size):
                 prev_ms, dec_seq = greedy_decoding_step(
+                    model,
                     prev_ms,
                     input_ids_list[idx],
                     img_feats_list[idx],
@@ -295,6 +297,7 @@ class Translator(object):
 
     def translate_batch(
         self,
+        model: nn.Module,
         model_inputs,
         use_beam: bool=False,
         make_knn_dstore: bool=False,
@@ -314,6 +317,7 @@ class Translator(object):
         ) = model_inputs
         
         return self.translate_batch_greedy(
+            model,
             input_ids_list,
             img_feats_list,
             txt_feats_list,

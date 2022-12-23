@@ -32,7 +32,7 @@ class DecoderLayer(nn.Module):
         x = self.LayerNorm(x)
 
         if make_knn_dstore:
-            knn_feat = x.clone().cpu()
+            knn_feat = x.clone().detach().cpu()
         
         # ffn layer
         identity_x = x.clone().cuda()
