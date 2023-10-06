@@ -19,7 +19,7 @@ If you have problems with the `pycocoevalcap` package try uninstalling it and in
 The METEOR metric requires `java`. Either install the latest Java 1.8 through the system (Tested with `Java RE 1.8.0_261`). Make sure your locale is set correct i.e. `echo $LANG` outputs `en_US.UTF-8`
 
 ## Download and extract for YooCook2-FC dataset
-[COOT output Embeddings](https://drive.google.com/file/d/1atbI9HaFArNPeZzkvrJ9TnkCAal6gyUQ/view?usp=sharing) ~230mb, [Pretrained Captioning models](https://drive.google.com/file/d/1IV85_DXWx1SJL9ZJuT6Qvvyx8obE9f9x/view?usp=sharing) ~540 mb [YouCook2-FC dataset](https://drive.google.com/file/d/1DKkksKZaDLHVt3NBEMO_9c90osrKOXy8/view?usp=sharing) ~15 gb
+[COOT output Embeddings](https://drive.google.com/file/d/1atbI9HaFArNPeZzkvrJ9TnkCAal6gyUQ/view?usp=sharing) ~230mb, [Pretrained Captioning models](https://drive.google.com/file/d/1IV85_DXWx1SJL9ZJuT6Qvvyx8obE9f9x/view?usp=sharing) ~540 mb [YouCook2-FC dataset](https://drive.google.com/file/d/1NHs-C_CpxFN6tbMuwo_hNp_oFeOWlBqW/view?usp=drive_link) ~15 gb
 
 ~~~bash
 tar -xzvf provided_embeddings.tar.gz
